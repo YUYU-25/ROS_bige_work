@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<sdf version="1.6"><world name="yuyu_world">
+  <!-- 真值/放置服务供仿真验收使用，不参与正常导航控制。 -->
+  <plugin name="yuyu_world_state" filename="libgazebo_ros_state.so"><ros><namespace>/gazebo</namespace></ros><update_rate>20</update_rate></plugin>
+  <gravity>0 0 -9.81</gravity>
+  <physics name="ode" type="ode"><max_step_size>0.001</max_step_size><real_time_update_rate>1000</real_time_update_rate></physics>
+  <scene><ambient>0.45 0.45 0.45 1</ambient><background>0.08 0.10 0.13 1</background><shadows>true</shadows></scene>
+  <light name="desk_light" type="directional"><pose>0 0 3 0 0 0</pose><diffuse>0.8 0.8 0.8 1</diffuse><specular>0.2 0.2 0.2 1</specular><direction>-0.5 0.2 -1</direction><cast_shadows>true</cast_shadows></light>
+  <gui><camera name="user_camera"><pose>.55 -.55 1.13 0 .35 2.35</pose><view_controller>orbit</view_controller></camera></gui>
+  <model name="floor"><static>true</static><link name="link">
+    <collision name="collision"><geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry></collision>
+    <visual name="visual"><geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry><material><ambient>.035 .045 .06 1</ambient><diffuse>.06 .07 .09 1</diffuse></material></visual>
+  </link></model>
+  <!-- 桌面顶面为 z=0.75；模型 spawn 的 base_footprint 位于该高度。 -->
+  <model name="desk"><static>true</static><pose>0 0 .73 0 0 0</pose><link name="top">
+    <collision name="collision"><geometry><box><size>1 .6 .04</size></box></geometry><surface><friction><ode><mu>1</mu><mu2>1</mu2></ode></friction></surface></collision>
+    <visual name="wood"><geometry><box><size>1 .6 .04</size></box></geometry><material><script><uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/Wood</name></script><ambient>.40 .21 .08 1</ambient><diffuse>.55 .30 .12 1</diffuse></material></visual>
+  </link></model>
+  <!-- 低挡边只作接触保护，防摔判定依赖下视测距。 -->
+  <model name="rim_front"><static>true</static><pose>.495 0 .755 0 0 0</pose><link name="link"><collision name="c"><geometry><box><size>.01 .6 .01</size></box></geometry></collision><visual name="v"><geometry><box><size>.01 .6 .01</size></box></geometry><material><diffuse>.25 .12 .04 1</diffuse></material></visual></link></model>
+  <model name="rim_back"><static>true</static><pose>-.495 0 .755 0 0 0</pose><link name="link"><collision name="c"><geometry><box><size>.01 .6 .01</size></box></geometry></collision><visual name="v"><geometry><box><size>.01 .6 .01</size></box></geometry><material><diffuse>.25 .12 .04 1</diffuse></material></visual></link></model>
+  <model name="rim_left"><static>true</static><pose>0 .295 .755 0 0 0</pose><link name="link"><collision name="c"><geometry><box><size>1 .01 .01</size></box></geometry></collision><visual name="v"><geometry><box><size>1 .01 .01</size></box></geometry><material><diffuse>.25 .12 .04 1</diffuse></material></visual></link></model>
+  <model name="rim_right"><static>true</static><pose>0 -.295 .755 0 0 0</pose><link name="link"><collision name="c"><geometry><box><size>1 .01 .01</size></box></geometry></collision><visual name="v"><geometry><box><size>1 .01 .01</size></box></geometry><material><diffuse>.25 .12 .04 1</diffuse></material></visual></link></model>
+  <model name="red_cup"><static>true</static><pose>.2 .1 .81 0 0 0</pose><link name="link"><collision name="c"><geometry><cylinder><radius>.04</radius><length>.12</length></cylinder></geometry></collision><visual name="v"><geometry><cylinder><radius>.04</radius><length>.12</length></cylinder></geometry><material><ambient>.7 .04 .03 1</ambient><diffuse>.9 .05 .03 1</diffuse></material></visual></link></model>
+  <model name="blue_pencil_box"><static>true</static><pose>-.2 -.15 .765 0 0 0</pose><link name="link"><collision name="c"><geometry><box><size>.15 .05 .03</size></box></geometry></collision><visual name="v"><geometry><box><size>.15 .05 .03</size></box></geometry><material><ambient>.03 .12 .6 1</ambient><diffuse>.05 .25 .9 1</diffuse></material></visual></link></model>
+  <model name="white_lamp"><static>true</static><pose>.35 -.2 .75 0 0 0</pose><link name="link">
+    <collision name="base"><pose>0 0 .008 0 0 0</pose><geometry><cylinder><radius>.045</radius><length>.016</length></cylinder></geometry></collision>
+    <visual name="base"><pose>0 0 .008 0 0 0</pose><geometry><cylinder><radius>.045</radius><length>.016</length></cylinder></geometry><material><diffuse>.95 .95 .95 1</diffuse></material></visual>
+    <collision name="pole"><pose>0 0 .10 0 0 0</pose><geometry><cylinder><radius>.008</radius><length>.2</length></cylinder></geometry></collision>
+    <visual name="pole"><pose>0 0 .10 0 0 0</pose><geometry><cylinder><radius>.008</radius><length>.2</length></cylinder></geometry><material><diffuse>.95 .95 .95 1</diffuse></material></visual>
+    <visual name="shade"><pose>0 0 .2 0 0 0</pose><geometry><sphere><radius>.04</radius></sphere></geometry><material><diffuse>.95 .95 .90 1</diffuse></material></visual>
+  </link></model>
+</world></sdf>

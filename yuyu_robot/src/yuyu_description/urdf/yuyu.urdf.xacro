@@ -1,0 +1,190 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="yuyu">
+  <!-- 独立设计的圆角主体。轮子接触半径保持真实尺寸，避免碰撞缩小导致悬空。 -->
+  <xacro:arg name="control_file" default="$(find yuyu_description)/ros2_control/yuyu_control.yaml"/>
+  <xacro:arg name="body_size" default="0.16"/>
+  <xacro:arg name="body_height" default="0.10"/>
+  <xacro:arg name="body_center" default="0.09"/>
+  <xacro:arg name="wheel_radius" default="0.025"/>
+  <xacro:arg name="wheel_width" default="0.02"/>
+  <xacro:arg name="wheel_separation" default="0.12"/>
+  <xacro:arg name="body_mass" default="0.4"/>
+  <xacro:arg name="wheel_mass" default="0.015"/>
+  <xacro:arg name="caster_radius" default="0.015"/>
+  <xacro:arg name="caster_mass" default="0.005"/>
+  <xacro:arg name="screen_width" default="0.10"/>
+  <xacro:arg name="screen_height" default="0.06"/>
+  <xacro:arg name="leg_length" default="0.04"/>
+  <xacro:arg name="leg_width" default="0.03"/>
+  <xacro:arg name="leg_height" default="0.04"/>
+  <xacro:arg name="leg_mass" default="0.01"/>
+  <xacro:arg name="lidar_height" default="0.15"/>
+  <xacro:arg name="camera_height" default="0.13"/>
+  <xacro:arg name="cliff_height" default="0.038"/>
+  <xacro:arg name="antenna" default="true"/>
+  <xacro:property name="b" value="$(arg body_size)"/>
+  <xacro:property name="h" value="$(arg body_height)"/>
+  <xacro:property name="z0" value="$(arg body_center)"/>
+  <xacro:property name="wr" value="$(arg wheel_radius)"/>
+  <xacro:property name="ww" value="$(arg wheel_width)"/>
+  <xacro:property name="sep" value="$(arg wheel_separation)"/>
+  <xacro:property name="wm" value="$(arg wheel_mass)"/>
+  <xacro:property name="cr" value="$(arg caster_radius)"/>
+  <xacro:property name="cm" value="$(arg caster_mass)"/>
+  <xacro:property name="sw" value="$(arg screen_width)"/>
+  <xacro:property name="sh" value="$(arg screen_height)"/>
+  <xacro:property name="ll" value="$(arg leg_length)"/>
+  <xacro:property name="lw" value="$(arg leg_width)"/>
+  <xacro:property name="lh" value="$(arg leg_height)"/>
+  <xacro:property name="ch" value="$(arg cliff_height)"/>
+  <xacro:property name="mesh" value="package://yuyu_description/meshes/rounded_box.stl"/>
+  <material name="graphite"><color rgba="0.075 0.095 0.12 1"/></material>
+  <material name="black"><color rgba="0.018 0.024 0.03 1"/></material>
+  <material name="ice"><color rgba="0.1 0.72 0.9 1"/></material>
+
+  <xacro:macro name="box_inertia" params="m x y z ox:=0">
+    <inertial><origin xyz="${ox} 0 0"/><mass value="${m}"/><inertia ixx="${m*(y*y+z*z)/12}" ixy="0" ixz="0"
+      iyy="${m*(x*x+z*z)/12}" iyz="0" izz="${m*(x*x+y*y)/12}"/></inertial>
+  </xacro:macro>
+  <xacro:macro name="fixed" params="name parent child xyz rpy:='0 0 0'">
+    <joint name="${name}" type="fixed"><parent link="${parent}"/><child link="${child}"/>
+      <origin xyz="${xyz}" rpy="${rpy}"/></joint>
+  </xacro:macro>
+  <xacro:macro name="rounded" params="name xyz size material mass collision:=false gazebo_material:='Gazebo/Black' cover_sign:=0">
+    <xacro:property name="dims" value="${[float(n) for n in size.split()]}"/>
+    <link name="${name}">
+      <visual><geometry><mesh filename="${mesh}" scale="${size}"/></geometry><material name="${material}"/></visual>
+      <!-- 短腿下罩遮住驱动轮，仅底部接触带露出；这是无碰撞的装饰外壳。 -->
+      <xacro:if value="${cover_sign != 0}">
+        <visual><origin xyz="-0.04 ${cover_sign*(sep/2-.044)} ${wr-(lh/2+.004)}"/>
+          <geometry><mesh filename="${mesh}" scale="${2.4*wr} ${ww+.016} ${2*wr-.004}"/></geometry><material name="black"/>
+        </visual>
+      </xacro:if>
+      <xacro:box_inertia m="${mass}" x="${dims[0]}" y="${dims[1]}" z="${dims[2]}"/>
+      <xacro:if value="${collision}"><collision><geometry><box size="${size}"/></geometry></collision></xacro:if>
+    </link>
+    <xacro:fixed name="${name}_joint" parent="base_link" child="${name}" xyz="${xyz}"/>
+    <gazebo reference="${name}"><material>${gazebo_material}</material></gazebo>
+  </xacro:macro>
+
+  <link name="base_footprint"/>
+  <link name="base_link">
+    <visual><geometry><mesh filename="${mesh}" scale="${b} ${b} ${h}"/></geometry><material name="graphite"/></visual>
+    <collision><geometry><box size="${b-0.004} ${b-0.004} ${h-0.004}"/></geometry></collision>
+    <!-- 后部电池让质心落在双轮与后支撑轮围成的三角形内。 -->
+    <xacro:box_inertia m="$(arg body_mass)" x="${b}" y="${b}" z="${h}" ox="-0.015"/>
+  </link>
+  <xacro:fixed name="base_joint" parent="base_footprint" child="base_link" xyz="0 0 ${z0}"/>
+  <gazebo reference="base_link"><material>Gazebo/DarkGrey</material></gazebo>
+
+  <xacro:macro name="wheel" params="side sign">
+    <link name="${side}_wheel_link">
+      <visual><origin rpy="${pi/2} 0 0"/><geometry><cylinder radius="${wr}" length="${ww}"/></geometry><material name="black"/></visual>
+      <collision><origin rpy="${pi/2} 0 0"/><geometry><cylinder radius="${wr}" length="${ww}"/></geometry></collision>
+      <inertial><mass value="${wm}"/><inertia ixx="${wm*(3*wr*wr+ww*ww)/12}" ixy="0" ixz="0"
+        iyy="${wm*wr*wr/2}" iyz="0" izz="${wm*(3*wr*wr+ww*ww)/12}"/></inertial>
+    </link>
+    <joint name="${side}_wheel_joint" type="continuous"><parent link="base_link"/><child link="${side}_wheel_link"/>
+      <origin xyz="0 ${sign*sep/2} ${wr-z0}"/><axis xyz="0 1 0"/>
+      <!-- 微型轮惯量很小；速度接口下不用显式阻尼，避免 ODE 积分反向超调。 -->
+      <limit effort="0.4" velocity="1.0"/><dynamics damping="0" friction="0"/>
+    </joint>
+    <gazebo reference="${side}_wheel_link"><material>Gazebo/Black</material><mu1>1.0</mu1><mu2>1.0</mu2>
+      <kp>100000</kp><kd>10</kd><minDepth>0.0005</minDepth></gazebo>
+  </xacro:macro>
+  <xacro:wheel side="left" sign="1"/><xacro:wheel side="right" sign="-1"/>
+  <link name="caster_link">
+    <visual><geometry><sphere radius="${cr}"/></geometry><material name="black"/></visual>
+    <collision><geometry><sphere radius="${cr}"/></geometry></collision>
+    <inertial><mass value="${cm}"/><inertia ixx="${.4*cm*cr*cr}" ixy="0" ixz="0" iyy="${.4*cm*cr*cr}" iyz="0" izz="${.4*cm*cr*cr}"/></inertial>
+  </link>
+  <xacro:fixed name="caster_joint" parent="base_link" child="caster_link" xyz="-0.055 0 ${cr-z0}"/>
+  <gazebo reference="caster_link"><mu1>0.001</mu1><mu2>0.001</mu2><material>Gazebo/Black</material></gazebo>
+
+  <!-- 固定短腿只作外观，不参与地面接触，不会拖住底盘。 -->
+  <xacro:rounded name="left_leg_link" xyz="0.04 0.044 ${lh/2+.004-z0}" size="${ll} ${lw} ${lh}" material="black" mass="$(arg leg_mass)" cover_sign="1"/>
+  <xacro:rounded name="right_leg_link" xyz="0.04 -0.044 ${lh/2+.004-z0}" size="${ll} ${lw} ${lh}" material="black" mass="$(arg leg_mass)" cover_sign="-1"/>
+  <xacro:rounded name="headphone_left_link" xyz="0 ${b/2+.005} 0.015" size="0.045 0.014 0.06" material="black" mass="0.003"/>
+  <xacro:rounded name="headphone_right_link" xyz="0 ${-b/2-.005} 0.015" size="0.045 0.014 0.06" material="black" mass="0.003"/>
+
+  <!-- local z 为屏幕法线，local x/y 分别为画面横/纵方向。 -->
+  <link name="face_screen_link">
+    <visual name="face_screen_link_visual"><geometry><box size="${sw} ${sh} 0.001"/></geometry><material name="black"/></visual>
+    <xacro:box_inertia m="0.002" x="${sw}" y="${sh}" z="0.001"/>
+  </link>
+  <xacro:fixed name="face_joint" parent="base_link" child="face_screen_link" xyz="${b/2+.0006} 0 0.002" rpy="${pi/2} 0 ${pi/2}"/>
+  <gazebo reference="face_screen_link"><visual>
+    <plugin name="yuyu_face_video" filename="libgazebo_ros_video.so">
+      <ros><remapping>~/image_raw:=/face_image</remapping></ros><width>320</width><height>192</height>
+    </plugin>
+  </visual></gazebo>
+
+  <link name="lidar_link">
+    <visual><geometry><cylinder radius="0.016" length="0.012"/></geometry><material name="ice"/></visual>
+    <xacro:box_inertia m="0.01" x="0.032" y="0.032" z="0.012"/>
+  </link>
+  <xacro:fixed name="lidar_joint" parent="base_link" child="lidar_link" xyz="0 0 ${float('$(arg lidar_height)')-z0}"/>
+  <gazebo reference="lidar_link"><material>Gazebo/Turquoise</material>
+    <sensor name="lidar" type="ray"><always_on>true</always_on><update_rate>10</update_rate>
+      <ray><scan><horizontal><samples>360</samples><resolution>1</resolution><min_angle>${-pi}</min_angle><max_angle>${pi}</max_angle></horizontal></scan>
+        <range><min>0.025</min><max>5.0</max><resolution>0.005</resolution></range></ray>
+      <plugin name="yuyu_lidar" filename="libgazebo_ros_ray_sensor.so"><ros><remapping>~/out:=/scan</remapping></ros>
+        <output_type>sensor_msgs/LaserScan</output_type><frame_name>lidar_link</frame_name></plugin>
+    </sensor>
+  </gazebo>
+
+  <link name="camera_link"><xacro:box_inertia m="0.002" x="0.01" y="0.01" z="0.01"/></link>
+  <link name="camera_optical_frame"/>
+  <xacro:fixed name="camera_joint" parent="base_link" child="camera_link" xyz="${b/2+.002} 0 ${float('$(arg camera_height)')-z0}"/>
+  <xacro:fixed name="camera_optical_joint" parent="camera_link" child="camera_optical_frame" xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+  <gazebo reference="camera_link"><sensor name="camera" type="camera"><always_on>true</always_on><update_rate>10</update_rate>
+    <camera><horizontal_fov>1.15</horizontal_fov><image><width>640</width><height>480</height><format>R8G8B8</format></image><clip><near>0.01</near><far>5</far></clip></camera>
+    <plugin name="yuyu_camera" filename="libgazebo_ros_camera.so"><ros><namespace>/</namespace></ros>
+      <camera_name>camera</camera_name><frame_name>camera_optical_frame</frame_name></plugin>
+  </sensor></gazebo>
+
+  <link name="imu_link"><xacro:box_inertia m="0.001" x="0.01" y="0.01" z="0.01"/></link>
+  <xacro:fixed name="imu_joint" parent="base_link" child="imu_link" xyz="0 0 0"/>
+  <gazebo reference="imu_link"><sensor name="imu" type="imu"><always_on>true</always_on><update_rate>30</update_rate>
+    <plugin name="yuyu_imu" filename="libgazebo_ros_imu_sensor.so"><ros><remapping>~/out:=/imu/data</remapping></ros><initial_orientation_as_reference>false</initial_orientation_as_reference></plugin>
+  </sensor></gazebo>
+
+  <xacro:macro name="range_sensor" params="name xyz rpy topic max_range fov">
+    <link name="${name}_link"><xacro:box_inertia m="0.0005" x="0.005" y="0.005" z="0.005"/></link>
+    <xacro:fixed name="${name}_joint" parent="base_link" child="${name}_link" xyz="${xyz}" rpy="${rpy}"/>
+    <gazebo reference="${name}_link"><sensor name="${name}" type="ray"><always_on>true</always_on><update_rate>20</update_rate>
+      <ray><scan><horizontal><samples>5</samples><resolution>1</resolution><min_angle>${-fov/2}</min_angle><max_angle>${fov/2}</max_angle></horizontal></scan>
+        <range><min>0.005</min><max>${max_range}</max><resolution>0.001</resolution></range></ray>
+      <plugin name="${name}_ros" filename="libgazebo_ros_ray_sensor.so"><ros><remapping>~/out:=/raw${topic}</remapping></ros>
+        <output_type>sensor_msgs/Range</output_type><radiation_type>infrared</radiation_type><frame_name>${name}_link</frame_name></plugin>
+    </sensor></gazebo>
+  </xacro:macro>
+  <xacro:range_sensor name="cliff_front_left" xyz=".072 .062 ${ch-z0}" rpy="0 ${pi/2} 0" topic="/cliff/front_left" max_range="1.5" fov="0.02"/>
+  <xacro:range_sensor name="cliff_front_right" xyz=".072 -.062 ${ch-z0}" rpy="0 ${pi/2} 0" topic="/cliff/front_right" max_range="1.5" fov="0.02"/>
+  <xacro:range_sensor name="cliff_rear_left" xyz="-.072 .062 ${ch-z0}" rpy="0 ${pi/2} 0" topic="/cliff/rear_left" max_range="1.5" fov="0.02"/>
+  <xacro:range_sensor name="cliff_rear_right" xyz="-.072 -.062 ${ch-z0}" rpy="0 ${pi/2} 0" topic="/cliff/rear_right" max_range="1.5" fov="0.02"/>
+  <!-- 低位前后测距补足顶部水平雷达看不到矮笔盒的问题。 -->
+  <xacro:range_sensor name="proximity_front" xyz=".083 0 ${.025-z0}" rpy="0 0 0" topic="/proximity/front" max_range="1.0" fov="0.8"/>
+  <xacro:range_sensor name="proximity_rear" xyz="-.083 0 ${.025-z0}" rpy="0 0 ${pi}" topic="/proximity/rear" max_range="1.0" fov="0.8"/>
+  <xacro:if value="$(arg antenna)">
+    <xacro:rounded name="antenna_link" xyz="-.03 0 ${.166-z0}" size="0.009 0.009 0.028" material="ice" mass="0.001" gazebo_material="Gazebo/Turquoise"/>
+  </xacro:if>
+
+  <ros2_control name="GazeboSystem" type="system">
+    <hardware><plugin>gazebo_ros2_control/GazeboSystem</plugin></hardware>
+    <xacro:macro name="controlled_wheel" params="side">
+      <joint name="${side}_wheel_joint"><command_interface name="velocity"><param name="min">-1.0</param><param name="max">1.0</param></command_interface>
+        <!-- 轮速闭环通过力矩驱动，避免直接 SetVelocity 在转向负载下严重欠速。 -->
+        <param name="vel_kp">0.005</param><param name="vel_ki">0.02</param><param name="vel_kd">0.0</param>
+        <param name="vel_max_integral_error">0.05</param><param name="vel_min_integral_error">-0.05</param>
+        <param name="vel_antiwindup">true</param>
+        <state_interface name="position"/><state_interface name="velocity"/></joint>
+    </xacro:macro>
+    <xacro:controlled_wheel side="left"/><xacro:controlled_wheel side="right"/>
+  </ros2_control>
+  <gazebo><plugin name="gazebo_ros2_control" filename="libgazebo_ros2_control.so">
+    <parameters>$(arg control_file)</parameters>
+    <ros><remapping>/diffbot_base_controller/cmd_vel_unstamped:=/cmd_vel</remapping>
+      <remapping>/diffbot_base_controller/odom:=/odom</remapping></ros>
+  </plugin></gazebo>
+</robot>
