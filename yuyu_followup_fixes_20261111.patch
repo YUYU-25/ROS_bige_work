@@ -1,0 +1,366 @@
+diff --git a/docs/07_followup_fixes.md b/docs/07_followup_fixes.md
+new file mode 100644
+index 0000000..9f2fc6e
+--- /dev/null
++++ b/docs/07_followup_fixes.md
+@@ -0,0 +1,46 @@
++# 使用回归中的后续修复（2026-11-11）
++
++状态：工作区源码已修正，尚未应用到用户虚拟机；原0.2.0下载包保持原样。
++
++## 否定心情不应触发开心回复
++
++用户在Windows面板输入“很不开心”和“我很不开心”，旧规则因匹配到“开心”，随机选了“为你开心”等回复。修正后，常见否定前缀、程度词和“开心不起来”等表达进入关怀分组，行为层对应`care`表情。关怀文案同时改为倾听与陪伴，不假定用户不开心的原因。
++
++规则处理范围包括：
++
++- “很不开心”“不太高兴”“开心不起来”等进入关怀分组。
++- “从来没有这么开心过”仍识别为开心；“刚才不开心，现在很开心”等用最后一个明确感受。
++- “不是不开心”等双重否定不直接推断为开心，也不使用恢复语音专用的`none`标签。
++- 保留停止、安静和明确恢复说话的原有优先级。
++
++这是有限的句子规则，不保证理解所有反讽、转述和复杂上下文。未明确识别时保留原有未理解反馈，不擅自恢复静音。
++
++## 网页图片请求取消导致的断连日志
++
++慢响应下，旧页面每220毫秒更新图片地址，会取消上一张还未完成的图片请求。修正为等待当前图片加载结束或失败，再请求下一张；后台正常处理响应期间的连接重置、断管和超时。
++
++独立真实浏览器验证中，延迟每张图650毫秒：旧版出现13次取消、最大3个并发请求；修正版完成4张图、0次取消、最多1个请求在途。真实HTTP断连测试覆盖响应头与响应体阶段，以及图片和指令两条接口；旧版4种场景均失败，修正版通过，已提交的指令不会因响应取消被重复执行。
++
++## 本轮检查
++
++`python3 -m unittest discover -s tests -p 'test_*.py' -v`：共42项，39项通过，3项跳过。新增5组情绪句子测试通过；旧规则在新增检查中出现19个失败，修正后全部通过。
++
++跳过项分别是需要Humble消息环境的网格附着检查，以及2项需要espeak的真实音频进程检查。原独立Humble测试根目录已失效，本轮没有重新运行ROS接口或物理仿真。`ros_upgrade_contract.py`已经补充两条用户复现语句的关怀语料与表情断言，等待可用Humble环境执行。
++
++此前0.2.0的实测结果仍见[原验证记录](VALIDATION_V2.md)，不把旧结果算作本轮ROS验证。
++
++## 应用补丁
++
++补丁基于已发布的0.2.0源码，不需要新增软件依赖。先结束主程序并关闭两个三维窗口，在Ubuntu工程目录中执行：
++
++```bash
++cd ~/yuyu_robot
++git apply --check ~/Downloads/yuyu_followup_fixes_20261111.patch
++git apply ~/Downloads/yuyu_followup_fixes_20261111.patch
++source tools/env.sh
++colcon build --symlink-install
++```
++
++先做`--check`；若文件版本不匹配，应保留报错并停止应用。源码修改后需要重新编译并重新启动节点，单独刷新浏览器不会更新已经加载的情绪规则。
++
++需要撤回时，在相同工程目录执行`git apply -R`加同一个补丁路径，再重新编译和启动。补丁只包含本次源码、语料、检查与说明文件。
+diff --git a/src/yuyu_bringup/config/quotes.yaml b/src/yuyu_bringup/config/quotes.yaml
+index 999a048..349d3df 100644
+--- a/src/yuyu_bringup/config/quotes.yaml
++++ b/src/yuyu_bringup/config/quotes.yaml
+@@ -1,9 +1,9 @@
+ annoyed:
+-  - 心里乱的时候，先允许它乱一会儿。
+-  - 你不是不够好，只是今天事情有点多。
+-  - 慢一点也没关系，路不会跑。
+-  - 风大的时候，树也只是先弯一弯。
+-  - 今天烦了就先停下，没事的。
++  - 听起来心情不太好，愿意说说发生什么了吗？
++  - 我在呢。你想说的话，我就听着。
++  - 不用急着让自己开心起来，我陪你待一会儿。
++  - 想聊聊，还是先安静一会儿？都可以。
++  - 可以慢慢说，我陪着你。
+ tired:
+   - 累了就停，电量低不是故障。
+   - 今天已经走了很远，不必再证明什么。
+diff --git a/src/yuyu_bringup/web/app.js b/src/yuyu_bringup/web/app.js
+index 2de1c0a..86127e2 100644
+--- a/src/yuyu_bringup/web/app.js
++++ b/src/yuyu_bringup/web/app.js
+@@ -84,4 +84,8 @@ function toBase64(file){return new Promise((resolve,reject)=>{const reader=new F
+ $('record-reference').addEventListener('click',()=>record('reference'));$('listen-button').addEventListener('click',()=>{if(!snapshot?.capabilities.asr_model||!snapshot?.capabilities.asr_package){toast('请先在设置→语音输入中准备离线识别模型');$('settings-dialog').showModal();document.querySelector('[data-tab="input"]').click();return;}record('command');});
+ $('voice-file').addEventListener('change',e=>{const file=e.target.files[0];if(!file)return;if(file.size>12*1024*1024){toast('录音不能超过12MB');return;}referenceFile=file;showReference(file);$('record-status').textContent=file.name;});
+ $('save-reference').addEventListener('click',async()=>{if(!referenceFile){toast('请先录音或选择音频文件');return;}const button=$('save-reference');button.disabled=true;try{const r=await api('/api/voices/import',{name:$('voice-name').value,prompt:$('voice-prompt').value,audio:await toBase64(referenceFile),filename:referenceFile.name});toast(r.detail);referenceFile=null;$('voice-name').value=$('voice-prompt').value='';$('record-preview').hidden=true;$('record-status').textContent='已保存，可以继续添加其他音色';renderedVoices='';await poll();}catch(e){toast(e.message);}finally{button.disabled=false;}});
+-poll();setInterval(poll,650);setInterval(()=>{if(!document.hidden)$('face').src='/api/face.png?t='+Date.now();},220);
++// Let slow image responses finish instead of cancelling them on each timer tick.
++let facePending=!$('face').complete;
++for(const event of ['load','error'])$('face').addEventListener(event,()=>{facePending=false;});
++function pollFace(){if(document.hidden||facePending)return;facePending=true;$('face').src='/api/face.png?t='+Date.now();}
++poll();setInterval(poll,650);setInterval(pollFace,220);
+diff --git a/src/yuyu_bringup/yuyu_bringup/core.py b/src/yuyu_bringup/yuyu_bringup/core.py
+index 080fe81..13934f0 100644
+--- a/src/yuyu_bringup/yuyu_bringup/core.py
++++ b/src/yuyu_bringup/yuyu_bringup/core.py
+@@ -1,5 +1,6 @@
+ """不依赖 ROS 的规则、几何与防护逻辑，便于独立验证。"""
+ import math
++import re
+ 
+ CLIFF_NAMES = ('front_left', 'front_right', 'rear_left', 'rear_right')
+ MAX_WHEEL_RAD_S = 2.8
+@@ -7,6 +8,37 @@ DEFAULT_SPEED = 0.05
+ DANCE_MARGIN = 0.145
+ SCAN_SELF_RADIUS = 0.13
+ 
++_MOOD_WORD = re.compile(r'开心(?!果)|高兴|难过|烦躁|烦|累')
++_MOOD_QUESTION = re.compile(r'开不开心|高不高兴|难不难过|烦不烦|累不累')
++_NEGATORS = r'没有|不是|并非|不算|谈不上|不能|不|没|别'
++_NEGATED_MOOD_PREFIX = re.compile(
++    rf'(?:(?:{_NEGATORS})(?:太|很|那么|怎么|特别|十分|非常|真的|真|再|'
++    r'觉得|感到|感觉|想|会|能|什么|一点|也|就|这么|多|法|得|可能)*)+$')
++_MOOD_SUPERLATIVE = re.compile(r'从(?:来)?(?:没有|没|未)(?:这么|那么|如此)(?:地)?')
++
++
++def _feeling(text):
++    """Recognize simple feeling statements with local negation, not general conversation."""
++    text = _MOOD_QUESTION.sub('，', re.sub(r'\s+', '', text))
++    result = None
++    for match in _MOOD_WORD.finditer(text):
++        word, tail = match.group(), text[match.end():]
++        if tail.startswith(('吗', '么', '嘛', '?', '？')):
++            continue
++        # “从没这么开心过”否定的是过去的程度，而不是现在的开心。
++        prefix = _MOOD_SUPERLATIVE.sub('', text[:match.start()])
++        negated = _NEGATED_MOOD_PREFIX.search(prefix)
++        count = len(re.findall(_NEGATORS, negated.group())) if negated else 0
++        count += int(tail.startswith(('不起来', '不了', '才怪', '个鬼', '个屁')))
++        if count > 1:
++            # 双重否定不直接推断为开心；也不能返回恢复说话专用的“none”。
++            continue
++        if word in ('开心', '高兴'):
++            result = 'annoyed' if count else 'happy'
++        elif not count:
++            result = 'tired' if word == '累' else 'annoyed'
++    return result
++
+ 
+ def scan_without_body(ranges, range_max):
+     """Keep external measurements unchanged; mask returns inside the body disk."""
+@@ -34,12 +66,8 @@ def interpret(text):
+         command = 'stop'
+     elif any(s in text for s in ('恢复说话', '可以说话')):
+         emotion = 'none'
+-    elif any(s in text for s in ('烦', '难过')):
+-        emotion = 'annoyed'
+-    elif '累' in text:
+-        emotion = 'tired'
+-    elif any(s in text for s in ('开心', '高兴')):
+-        emotion = 'happy'
++    else:
++        emotion = _feeling(text)
+     return command, emotion
+ 
+ 
+diff --git a/src/yuyu_bringup/yuyu_bringup/panel.py b/src/yuyu_bringup/yuyu_bringup/panel.py
+index 6a71d35..5624bfc 100644
+--- a/src/yuyu_bringup/yuyu_bringup/panel.py
++++ b/src/yuyu_bringup/yuyu_bringup/panel.py
+@@ -153,14 +153,18 @@ def make_handler(application, web_root):
+                 payload = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode('utf-8')
+             elif isinstance(payload, str):
+                 payload = payload.encode('utf-8')
+-            self.send_response(status)
+-            self.send_header('Content-Type', content_type)
+-            self.send_header('Content-Length', str(len(payload)))
+-            self.send_header('Cache-Control', 'no-store')
+-            self.send_header('X-Content-Type-Options', 'nosniff')
+-            self.send_header('Content-Security-Policy', "default-src 'self'; img-src 'self' data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'")
+-            self.end_headers()
+-            self.wfile.write(payload)
++            try:
++                self.send_response(status)
++                self.send_header('Content-Type', content_type)
++                self.send_header('Content-Length', str(len(payload)))
++                self.send_header('Cache-Control', 'no-store')
++                self.send_header('X-Content-Type-Options', 'nosniff')
++                self.send_header('Content-Security-Policy', "default-src 'self'; img-src 'self' data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'")
++                self.end_headers()
++                self.wfile.write(payload)
++            except (ConnectionError, TimeoutError):
++                # Navigation and cancelled image requests can close the socket mid-response.
++                self.close_connection = True
+ 
+         def do_GET(self):
+             if not self.allowed_host():
+diff --git a/tests/ros_upgrade_contract.py b/tests/ros_upgrade_contract.py
+index 74562b6..62c2eb8 100644
+--- a/tests/ros_upgrade_contract.py
++++ b/tests/ros_upgrade_contract.py
+@@ -25,13 +25,14 @@ def main():
+         nodes=[VoiceEmotion(),TTS(),BehaviorManager(),VelocityMux(),ControlPanel(),FaceDisplay()]
+         voice,tts,behavior,mux,panel,face=nodes
+         probe=Node('yuyu_contract_probe');nodes.append(probe)
+-        values={'acks':[],'texts':[],'velocities':[],'goals':0}
++        values={'acks':[],'texts':[],'faces':[],'velocities':[],'goals':0}
+         pub=probe.create_publisher(String,'/command_request',20)
+         safety=probe.create_publisher(String,'/safety_status',5)
+         odom=probe.create_publisher(Odometry,'/odom',qos_profile_sensor_data)
+         near=[probe.create_publisher(Range,'/proximity/'+side,qos_profile_sensor_data) for side in ('front','rear')]
+         probe.create_subscription(String,'/command_ack',lambda m:values['acks'].append(json.loads(m.data)),20)
+         probe.create_subscription(String,'/face_text',lambda m:values['texts'].append(m.data),20)
++        probe.create_subscription(String,'/face_expr',lambda m:values['faces'].append(m.data),20)
+         probe.create_subscription(Twist,'/cmd_vel',lambda m:values['velocities'].append((m.linear.x,m.angular.z)),10)
+         def heartbeat():
+             safety.publish(String(data=json.dumps({'ready':True,'edges':dict.fromkeys(('front_left','front_right','rear_left','rear_right'),False),'pose':[0,0,0]})))
+@@ -58,6 +59,15 @@ def main():
+             command('quiet-1','安静');wait_for(lambda:tts.worker.silent and behavior.tasks.quiet)
+             command('resume-1','恢复说话');wait_for(lambda:not tts.worker.silent and not behavior.tasks.quiet)
+             assert any(x for x in values['texts'] if '陪' in x or '在' in x or '窗外' in x)
++            for identity,text,emotion,expression in (
++                    ('unhappy-1','很不开心','annoyed','care'),
++                    ('unhappy-2','我很不开心','annoyed','care'),
++                    ('happy-1','今天很开心','happy','happy')):
++                text_count,face_count=len(values['texts']),len(values['faces'])
++                command(identity,text)
++                assert next(a for a in values['acks'] if a['id']==identity)['emotion']==emotion
++                wait_for(lambda:any(t in voice.library[emotion] for t in values['texts'][text_count:]))
++                wait_for(lambda:expression in values['faces'][face_count:])
+             command('come-1','过来');wait_for(lambda:any('已经在你旁边' in t for t in values['texts']))
+             pub.publish(String(data=json.dumps({'id':'come-1','text':'过来'})))
+             wait_for(lambda:len([a for a in values['acks'] if a['id']=='come-1'])==2)
+@@ -72,7 +82,7 @@ def main():
+             time.sleep(.5);assert behavior.tasks.state=='IDLE' and all(abs(v)<.001 for v,w in values['velocities'][-5:])
+             with opener.open(panel.url+'/api/state') as response:state=json.load(response)
+             assert state['settings']['volume']==41 and 'panel-stop' in state['acks']
+-            print('PASS: actual ROS+HTTP adapters, one-shot resume, command ID dedup, already-at-goal response, settings propagation, manual lease, stop hold; sensors synthetic, audio disabled.',flush=True)
++            print('PASS: actual ROS+HTTP adapters, negated feelings use caring quotes/face, one-shot resume, command ID dedup, already-at-goal response, settings propagation, manual lease, stop hold; sensors synthetic, audio disabled.',flush=True)
+         finally:
+             executor.shutdown(timeout_sec=3);thread.join(timeout=3)
+             for n in reversed(nodes):n.destroy_node()
+diff --git a/tests/test_emotion_rules.py b/tests/test_emotion_rules.py
+new file mode 100644
+index 0000000..0b3fbd8
+--- /dev/null
++++ b/tests/test_emotion_rules.py
+@@ -0,0 +1,46 @@
++"""Regression sentences for negated feelings and explicit command priority."""
++from pathlib import Path
++import sys
++import unittest
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'src/yuyu_bringup'))
++from yuyu_bringup.core import interpret
++
++
++class EmotionRuleTests(unittest.TestCase):
++    def test_unhappy_is_never_read_as_happy(self):
++        for text in ('很不开心', '我很不开心', '我今天不太开心', '一点也不高兴',
++                     '我并不觉得开心', '没那么开心', '我开心不起来', '高兴不了',
++                     '开心才怪', '从来没这么不开心过'):
++            with self.subTest(text=text):
++                self.assertEqual(interpret(text), (None, 'annoyed'))
++
++    def test_genuinely_happy_sentences_remain_happy(self):
++        for text in ('今天很开心', '我好高兴', '从来没有这么开心过',
++                     '从未如此高兴', '不是一般的开心'):
++            with self.subTest(text=text):
++                self.assertEqual(interpret(text), (None, 'happy'))
++
++    def test_negated_or_ambiguous_feeling_does_not_resume_speech(self):
++        for text in ('我不难过', '不太累', '我不烦', '不是不开心', '没有不高兴',
++                     '你开不开心', '今天开心吗', '我在吃开心果'):
++            with self.subTest(text=text):
++                self.assertEqual(interpret(text), (None, None))
++
++    def test_later_explicit_feeling_handles_corrections(self):
++        for text, expected in (('刚才不开心，不过现在很开心', 'happy'),
++                               ('本来开心，但现在很难过', 'annoyed'),
++                               ('我很烦，不过不累', 'annoyed'),
++                               ('不是不开心，只是累了', 'tired')):
++            with self.subTest(text=text):
++                self.assertEqual(interpret(text), (None, expected))
++
++    def test_motion_and_quiet_commands_keep_priority(self):
++        self.assertEqual(interpret('过来陪我，我不开心'), ('come', 'annoyed'))
++        self.assertEqual(interpret('我不开心，别跳舞了'), ('stop', 'annoyed'))
++        self.assertEqual(interpret('我不开心，不想说话，安静'), ('stop', 'silent'))
++        self.assertEqual(interpret('恢复说话'), (None, 'none'))
++
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/tests/test_panel_disconnect.py b/tests/test_panel_disconnect.py
+new file mode 100644
+index 0000000..4495fd0
+--- /dev/null
++++ b/tests/test_panel_disconnect.py
+@@ -0,0 +1,83 @@
++"""A cancelled browser request must not crash/log the HTTP worker or resubmit a command."""
++import json
++from pathlib import Path
++import socket
++import struct
++import sys
++import tempfile
++import threading
++import unittest
++import urllib.request
++from http.server import ThreadingHTTPServer
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'src/yuyu_bringup'))
++from yuyu_bringup.panel import PanelApplication, make_handler
++
++
++class DisconnectTests(unittest.TestCase):
++    def test_reset_during_headers_or_body_keeps_server_usable(self):
++        for route in ('/api/face.png', '/api/command'):
++            for stage in ('headers', 'body'):
++                with self.subTest(route=route, stage=stage), tempfile.TemporaryDirectory() as root:
++                    ready, resume, finished = (threading.Event() for _ in range(3))
++                    errors, effects = [], []
++                    app = PanelApplication(lambda *args: effects.append(args), root)
++                    base = make_handler(app, Path(__file__).resolve().parents[1]/'src/yuyu_bringup/web')
++
++                    class Handler(base):
++                        def end_headers(self):
++                            if self.path == route and stage == 'headers':
++                                ready.set()
++                                if not resume.wait(3):
++                                    raise RuntimeError('test did not release header writer')
++                            super().end_headers()
++                            if self.path == route and stage == 'body':
++                                ready.set()
++                                if not resume.wait(3):
++                                    raise RuntimeError('test did not release body writer')
++
++                    class Server(ThreadingHTTPServer):
++                        daemon_threads = True
++
++                        def handle_error(self, request, client_address):
++                            errors.append(sys.exc_info()[0])
++
++                        def process_request_thread(self, request, client_address):
++                            try:
++                                super().process_request_thread(request, client_address)
++                            finally:
++                                finished.set()
++
++                    server = Server(('127.0.0.1', 0), Handler)
++                    thread = threading.Thread(target=server.serve_forever, daemon=True)
++                    thread.start()
++                    client = socket.create_connection(server.server_address, timeout=3)
++                    try:
++                        payload = json.dumps({'text': '过来', 'id': 'cancelled-response'}).encode()
++                        headers = (f'POST {route} HTTP/1.0\r\nHost: 127.0.0.1\r\n'
++                                   f'X-Yuyu-Token: {app.token}\r\nContent-Type: application/json\r\n'
++                                   f'Content-Length: {len(payload)}\r\n\r\n').encode()
++                        request = (headers+payload if route == '/api/command' else
++                                   b'GET /api/face.png HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n')
++                        client.sendall(request)
++                        self.assertTrue(ready.wait(3), 'HTTP response did not reach expected stage')
++                        client.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
++                        client.close()
++                        resume.set()
++                        self.assertTrue(finished.wait(3), 'cancelled response did not finish')
++                        self.assertEqual(errors, [])
++                        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
++                        with opener.open('http://127.0.0.1:%d/api/state' % server.server_port,
++                                         timeout=3) as response:
++                            self.assertIn('settings', json.load(response))
++                        self.assertEqual(len(effects), int(route == '/api/command'))
++                    finally:
++                        client.close()
++                        resume.set()
++                        server.shutdown()
++                        server.server_close()
++                        thread.join(timeout=3)
++
++
++if __name__ == '__main__':
++    unittest.main()
